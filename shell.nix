@@ -22,6 +22,14 @@ pkgs.stdenv.mkDerivation rec {
   ]);
     shellHook =''
       HISTFILE="$PWD/.histfile"
-      . $PWD/bin/activate
+      if test -e bin/activate ;then
+        . bin/activate
+      else
+        virtualenv .
+        . bin/activate
+        pip install splash warcprox
+      fi
+      echo 'run `warcprox`'
+      echo 'run `splash --proxy-profiles-path=proxies`'
     '' ;
 }
