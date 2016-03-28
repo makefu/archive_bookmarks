@@ -3,12 +3,12 @@
 pkgs.stdenv.mkDerivation rec {
   name = "scrape-all-env";
   version = "1.1";
-  buildInputs = with pkgs; [
+  buildInputs = (with pkgs; [
     curl
     git
     bash
     xorg.xorgserver
-  ] ++ ( with python2Packages; [
+  ]) ++ ( with pkgs.python2Packages; [
     pillow
     zope_interface
     pip
@@ -16,9 +16,11 @@ pkgs.stdenv.mkDerivation rec {
     virtualenv
     pyqt5
     six
-    requests
-    html2text
     pyopenssl
+    requests2
+    beautifulsoup4
+    pillow
+    docopt
   ]);
     shellHook =''
       HISTFILE="$PWD/.histfile"
@@ -27,7 +29,7 @@ pkgs.stdenv.mkDerivation rec {
       else
         virtualenv .
         . bin/activate
-        pip install splash warcprox
+        pip install splash warcprox minibar
       fi
       echo 'run `warcprox`'
       echo 'run `splash --proxy-profiles-path=proxies`'
