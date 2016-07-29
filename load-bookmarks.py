@@ -10,6 +10,9 @@ import logging
 urls = []
 splash_url="http://localhost:8050/render.json"
 es_url="http://localhost:9200/"
+index = "bookmarks"
+
+s = requests.Session()
 
 def getFiletime(dtms):
     # Ref: # https://stackoverflow.com/questions/19074423/how-to-parse-the-date-added-field-in-chrome-bookmarks-file
@@ -51,8 +54,6 @@ def main():
 
 def to_elasticsearch(urls):
     from datetime import datetime
-    index = "bookmarks"
-    s = requests.Session()
     for u in urls:
         ident = u.pop('_id')
         typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
@@ -61,20 +62,30 @@ def to_elasticsearch(urls):
 
 # TODO: get html2text, archive link, thumbnail
 
-def fetch_url(url):
+def fetch_url(u):
     p = {
-            "url": url,
+            "url": u['url'],
             "timeout":60,
             "png":"1",
             "html":"1",
     }
+
     if url.endswith('.pdf'):
         # raise TypeError ('will not handle pdfs')
-        loggin.error('will not handle pdfs')
+        logging.error('will not handle pdfs')
         return {}
         # raise TypeError ('will not handle pdfs')
     d = requests.get(splash_url,params=p).json()
-    d['scraped'] = datetime.datetime.now().isoformat()
+    d.update(u)
+    d['added'] = datetime.datetime.now().isoformat()
+    d['thumbnail'] = create_thumb(d['png'])
+    d['text'] = create_text(d['html'])
+    print(d)
+    ident = d.pop('_id')
+    typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
+    url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
+    print(s.post(url,json=d).json())
+
     return d
 
 def create_thumb(pngdata):
@@ -108,7 +119,9 @@ def handle_urls(ourls):
     #urls = ourls[:30]
     urls = ourls[:]
 
-    ret = pool.map_async(fetch_url,[data['url'] for data in urls],chunksize=1)
+    ret = pool.map_async(fetch_url,
+            [d for d in urls],
+            chunksize=1)
 
     template = "{i}/{total} {bar} elapsed:{elapsed}s eta:{eta}"
     bar = Minibar(total=len(urls),template=template,out=sys.stderr)
@@ -117,18 +130,6 @@ def handle_urls(ourls):
         bar.counter = (len(urls)- ret._number_left) or 1
         bar.render()
         sleep(0.05)
-
-    for data in ret.get():
-        thisurl = data.get('requestedUrl',None)
-        if not thisurl:
-            logging.error("{} - no requestedUrl".format(str(data)))
-            continue
-        for u in urls:
-            if u['url'] == thisurl:
-                u['thumbnail'] = create_thumb(data['png'])
-                u['html'] = data['html']
-                u['text'] = create_text(data['html'])
-                u['added'] = data['scraped']
 
     return urls
 
