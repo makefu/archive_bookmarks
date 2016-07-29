@@ -55,7 +55,7 @@ def main():
 def to_elasticsearch(urls):
     from datetime import datetime
     for u in urls:
-        ident = u.pop('_id')
+        ident = u.pop('id')
         typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
         url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
         print(s.post(url,json=u).json())
@@ -80,7 +80,6 @@ def fetch_url(u):
     d['added'] = datetime.datetime.now().isoformat()
     d['thumbnail'] = create_thumb(d['png'])
     d['text'] = create_text(d['html'])
-    print(d)
     ident = d.pop('_id')
     typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
     url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
