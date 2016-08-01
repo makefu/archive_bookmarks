@@ -2,16 +2,17 @@
 """usage: load-bookmarks [--only-es] FILE """
 import json
 from docopt import docopt
-import datetime
+from datetime import datetime,timedelta
 import requests
 import logging
-
+import time
+# logging.basicConfig(level=logging.DEBUG)
 # TODO handle_children without global var
 urls = []
 splash_url="http://localhost:8050/render.json"
 es_url="http://localhost:9200/"
-index = "bookmarks"
-
+index = "scrape-all"
+typ = "bookmarks"
 s = requests.Session()
 
 def getFiletime(dtms):
@@ -20,8 +21,8 @@ def getFiletime(dtms):
     seconds, micros = divmod(dtms, 1000000)
     days, seconds = divmod(seconds, 86400)
 
-    return (datetime.datetime(1601, 1, 1) + \
-            datetime.timedelta(days, seconds, micros)).isoformat()
+    return (datetime(1601, 1, 1) + \
+            timedelta(days, seconds, micros)).isoformat()
 
 def handle_children(ch,path):
     if not path: path = []
@@ -49,43 +50,56 @@ def main():
             ret = handle_urls(urls)
         else:
             ret = j
-    to_elasticsearch(ret)
-    print(json.dumps(ret))
-
-def to_elasticsearch(urls):
-    from datetime import datetime
-    for u in urls:
-        ident = u.pop('id')
-        typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
-        url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
-        print(s.post(url,json=u).json())
 
 # TODO: get html2text, archive link, thumbnail
 
+def id_in_elastic(ident):
+    #typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
+    url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
+    return s.head(url).status_code == 200
+
 def fetch_url(u):
+    url = u['url']
+    ident = u.pop('id')
     p = {
-            "url": u['url'],
-            "timeout":60,
+            "url": url,
+            "timeout":120,
             "png":"1",
             "html":"1",
     }
-
+    if id_in_elastic(ident):
+        logging.error("skipping ident {} as it is in elastic already".format(ident))
+        return {}
     if url.endswith('.pdf'):
         # raise TypeError ('will not handle pdfs')
         logging.error('will not handle pdfs')
         return {}
         # raise TypeError ('will not handle pdfs')
-    d = requests.get(splash_url,params=p).json()
-    d.update(u)
-    d['added'] = datetime.datetime.now().isoformat()
-    d['thumbnail'] = create_thumb(d['png'])
-    d['text'] = create_text(d['html'])
-    ident = d.pop('_id')
-    typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
-    url = "{}/{}/{}/{}".format(es_url,index,typ,ident)
-    print(s.post(url,json=d).json())
-
-    return d
+    try:
+        d = requests.get(splash_url,params=p).json()
+    except requests.exceptions.ConnectionError:
+        logging.error("Failed to load url {}".format(url))
+        time.sleep(1)
+        return {}
+    try:
+        d.update(u)
+        d['added'] = datetime.now().isoformat()
+        d['thumbnail'] = create_thumb(d['png'])
+        d['text'] = create_text(d['html'])
+        # typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
+        eurl = "{}/{}/{}/{}".format(es_url,index,typ,ident)
+        logging.info(s.post(eurl,json=d).json())
+        return d
+    except KeyError as e:
+        logging.error("Cannot add to elasticsearch: {}".format(d))
+        logging.error(e)
+        if d['type'] == 'GlobalTimeoutError':
+            log.info("adding to elastic search as is")
+            d['thumbnail'] = None
+            d['text'] = d['description']
+            logging.info(s.post(eurl,json=d).json())
+            return d
+    return {}
 
 def create_thumb(pngdata):
     from PIL import Image
@@ -112,8 +126,9 @@ def handle_urls(ourls):
     from time import sleep
     import sys,json
     from minibar import Minibar
+    import minibar
 
-    pool = Pool(processes=1)
+    pool = Pool(processes=10)
     #urls = ourls[:3]
     #urls = ourls[:30]
     urls = ourls[:]
@@ -130,6 +145,8 @@ def handle_urls(ourls):
         bar.render()
         sleep(0.05)
 
+    #for i in minibar.bar(urls,template=template):
+    #    fetch_url(i)
     return urls
 
 
