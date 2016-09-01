@@ -9,11 +9,28 @@ import time
 # logging.basicConfig(level=logging.DEBUG)
 # TODO handle_children without global var
 urls = []
-splash_url="http://localhost:8050/render.json"
+
+
+_url="http://localhost:8050/render.json"
 es_url="http://localhost:9200/"
 index = "scrape-all"
 typ = "bookmarks"
-s = requests.Session()
+
+def build_selenium():
+    warcproxy = "172.17.0.1:8000"
+    proxy = webdriver.Proxy({
+            'proxyType': ProxyType.MANUAL,
+            'httpProxy': warcproxy,
+            'ftpProxy': warcproxy,
+            'sslProxy': warcproxy,
+            'noProxy':''})
+
+    driver = webdriver.Remote(
+        command_executor='http://127.0.0.1:4444/wd/hub',
+        proxy=proxy,
+        desired_capabilities=DesiredCapabilities.CHROME)
+
+    return driver
 
 def getFiletime(dtms):
     # Ref: # https://stackoverflow.com/questions/19074423/how-to-parse-the-date-added-field-in-chrome-bookmarks-file
@@ -61,12 +78,7 @@ def id_in_elastic(ident):
 def fetch_url(u):
     url = u['url']
     ident = u.pop('id')
-    p = {
-            "url": url,
-            "timeout":120,
-            "png":"1",
-            "html":"1",
-    }
+
     if id_in_elastic(ident):
         logging.error("skipping ident {} as it is in elastic already".format(ident))
         return {}
@@ -76,7 +88,12 @@ def fetch_url(u):
         return {}
         # raise TypeError ('will not handle pdfs')
     try:
-        d = requests.get(splash_url,params=p).json()
+        d = {}
+        driver.get(url)
+        time.sleep(5)
+        d['png'] = driver.get_screenshot_as_png()
+        d['title'] = driver.title
+        d['text'] = driver.find_element_by_xpath("//html/body").text
     except requests.exceptions.ConnectionError:
         logging.error("Failed to load url {}".format(url))
         time.sleep(1)
@@ -85,8 +102,6 @@ def fetch_url(u):
         d.update(u)
         d['added'] = datetime.now().isoformat()
         d['thumbnail'] = create_thumb(d['png'])
-        d['text'] = create_text(d['html'])
-        # typ = "{}".format(datetime.now().strftime("%Y-%m-%d"))
         eurl = "{}/{}/{}/{}".format(es_url,index,typ,ident)
         logging.info(s.post(eurl,json=d).json())
         return d
@@ -111,13 +126,6 @@ def create_thumb(pngdata):
     im.save(ret,format="png")
     ret.seek(0)
     return "data:image/png;base64,"+ret.read().encode('base64').replace('\n','')
-
-def create_text(htmldata):
-    import html2text
-    h = html2text.HTML2Text()
-    h.ignore_links = True
-    h.ignore_images = True
-    return h.handle(htmldata)
 
 
 def handle_urls(ourls):
