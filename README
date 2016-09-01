@@ -1,4 +1,15 @@
+# Load bookmarks into elasticsearch
+
+Does the following things:
+
+* get website via selenium
+* selenium loads websites through warcprox to get an archive
+* retrieved website text+html is sent to elastic search
+
+# Usage
+
 ```
+# start elasticsearch
 nix-shell
 warcprox -b 0.0.0.0
 docker run -d -p 4444:4444 selenium/standalone-chrome:2.53.0
