@@ -30,13 +30,14 @@ let
         x_ignore_nofocus.o
       cp -v x_ignore_nofocus.so py/selenium/webdriver/firefox/${if pkgs.stdenv.is64bit then "amd64" else "x86"}/
     '';
+    doCheck = false;
   };
+  commonBuildInputs = [ ];
+  commonDoCheck = false;
+  python = { mkDerivation = pkgs.python3Packages.buildPythonPackage;};
+  generated = pkgs.lib.fix' (import ./requirements_generated.nix
+    { inherit pkgs python commonDoCheck commonBuildInputs; });
 
-  opkgs = import (pkgs.fetchFromGitHub {
-    owner = "NixOS"; repo = "nixpkgs-channels";
-    rev = "91371c2bb6e20fc0df7a812332d99c38b21a2bda";
-    sha256 = "1as1i0j9d2n3iap9b471y4x01561r2s3vmjc5281qinirlr4al73";
-  }) {};
 in pkgs.stdenv.mkDerivation rec {
   name = "scrape-all-env";
   version = "1.1";
@@ -53,19 +54,16 @@ in pkgs.stdenv.mkDerivation rec {
     virtualenv
     beautifulsoup4
     lxml
+    generated.warcprox
+    generated.minibar
+    generated.nltk
   ]);
     shellHook =''
       HISTFILE="$PWD/.histfile"
       export CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt
       export SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
-      if test -e bin/activate ;then
-        . bin/activate
-      else
-        virtualenv .
-        . bin/activate
-        pip install warcprox minibar nltk
-      fi
       echo 'run `warcprox`'
-      echo 'run `splash --proxy-profiles-path=proxies --max-timeout=300`'
+      echo 'run `sudo docker run -d -p 4444:4444 selenium/standalone-chrome:2.53.0`'
+      echo 'run `doit.py`'
     '' ;
 }
